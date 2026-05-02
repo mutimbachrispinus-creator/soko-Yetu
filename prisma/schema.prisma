@@ -1,0 +1,428 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────
+// AUTH & USERS
+// ─────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  phone         String?   @unique
+  name          String
+  passwordHash  String?
+  role          Role      @default(BUYER)
+  avatar        String?
+  isVerified    Boolean   @default(false)
+  idVerified    Boolean   @default(false)
+  kraPin        String?
+  idNumber      String?
+  language      Language  @default(EN)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLogin     DateTime?
+  isBanned      Boolean   @default(false)
+  banReason     String?
+
+  vendor        Vendor?
+  orders        Order[]
+  reviews       Review[]
+  addresses     Address[]
+  wishlist      Wishlist[]
+  messages      Message[]
+  fraudReports  FraudReport[]
+  sessions      Session[]
+  notifications Notification[]
+  bulkRequests  BulkRequest[]
+
+  @@index([email, phone])
+}
+
+enum Role {
+  BUYER
+  VENDOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Language {
+  EN
+  SW
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+// ─────────────────────────────────────
+// VENDORS
+// ─────────────────────────────────────
+model Vendor {
+  id              String        @id @default(cuid())
+  userId          String        @unique
+  shopName        String
+  slug            String        @unique
+  description     String?
+  logo            String?
+  banner          String?
+  county          String?
+  town            String?
+  kraPin          String?
+  businessRegNo   String?
+  isApproved      Boolean       @default(false)
+  isActive        Boolean       @default(true)
+  isFeatured      Boolean       @default(false)
+  commissionRate  Float         @default(0.05)
+  rating          Float         @default(0)
+  reviewCount     Int           @default(0)
+  totalSales      Int           @default(0)
+  balance         Float         @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id])
+  products        Product[]
+  orders          OrderItem[]
+  payouts         Payout[]
+  categories      VendorCategory[]
+
+  @@index([slug, isApproved])
+}
+
+model VendorCategory {
+  vendorId   String
+  categoryId String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@id([vendorId, categoryId])
+}
+
+// ─────────────────────────────────────
+// PRODUCTS & CATEGORIES
+// ─────────────────────────────────────
+model Category {
+  id          String     @id @default(cuid())
+  name        String
+  nameSwahili String?
+  slug        String     @unique
+  icon        String?
+  parentId    String?
+  parent      Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children    Category[] @relation("SubCategories")
+  products    Product[]
+  vendors     VendorCategory[]
+}
+
+model Product {
+  id             String        @id @default(cuid())
+  vendorId       String
+  categoryId     String
+  name           String
+  nameSwahili    String?
+  slug           String        @unique
+  description    String?
+  images         String[]
+  price          Float
+  originalPrice  Float?
+  stock          Int           @default(0)
+  unit           String        @default("piece")
+  minBulkQty     Int?
+  bulkPrice      Float?
+  sku            String?
+  isFeatured     Boolean       @default(false)
+  isFlashDeal    Boolean       @default(false)
+  flashDiscount  Int?
+  flashEndsAt    DateTime?
+  isActive       Boolean       @default(true)
+  isApproved     Boolean       @default(false)
+  county         String?
+  town           String?
+  rating         Float         @default(0)
+  reviewCount    Int           @default(0)
+  salesCount     Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  vendor         Vendor        @relation(fields: [vendorId], references: [id])
+  category       Category      @relation(fields: [categoryId], references: [id])
+  reviews        Review[]
+  orderItems     OrderItem[]
+  wishlist       Wishlist[]
+
+  @@index([vendorId, categoryId, isActive, isApproved])
+  @@index([slug])
+}
+
+// ─────────────────────────────────────
+// ORDERS
+// ─────────────────────────────────────
+model Order {
+  id              String        @id @default(cuid())
+  buyerId         String
+  addressId       String?
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(PENDING)
+  mpesaRef        String?
+  stripePaymentId String?
+  subtotal        Float
+  deliveryFee     Float         @default(0)
+  discount        Float         @default(0)
+  total           Float
+  notes           String?
+  isBulk          Boolean       @default(false)
+  institutionName String?
+  deliveryPartner String?
+  trackingCode    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deliveredAt     DateTime?
+
+  buyer           User          @relation(fields: [buyerId], references: [id])
+  address         Address?      @relation(fields: [addressId], references: [id])
+  items           OrderItem[]
+  statusHistory   OrderHistory[]
+
+  @@index([buyerId, status])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  productId  String
+  vendorId   String
+  quantity   Int
+  unitPrice  Float
+  total      Float
+  status     OrderStatus @default(PENDING)
+
+  order      Order    @relation(fields: [orderId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+  vendor     Vendor   @relation(fields: [vendorId], references: [id])
+}
+
+model OrderHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+  DISPUTED
+}
+
+enum PaymentMethod {
+  MPESA
+  STRIPE
+  PAYPAL
+  PESAPAL
+  VISA
+  MASTERCARD
+  COD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIAL
+}
+
+// ─────────────────────────────────────
+// REVIEWS
+// ─────────────────────────────────────
+model Review {
+  id          String   @id @default(cuid())
+  productId   String
+  userId      String
+  rating      Int
+  title       String?
+  body        String?
+  images      String[]
+  isVerified  Boolean  @default(false)
+  isFlagged   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product     Product  @relation(fields: [productId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@unique([productId, userId])
+}
+
+// ─────────────────────────────────────
+// ADDRESSES
+// ─────────────────────────────────────
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  label      String   @default("Home")
+  name       String
+  phone      String
+  county     String
+  town       String
+  street     String?
+  postalCode String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+  orders     Order[]
+}
+
+// ─────────────────────────────────────
+// WISHLIST
+// ─────────────────────────────────────
+model Wishlist {
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@id([userId, productId])
+}
+
+// ─────────────────────────────────────
+// MESSAGING
+// ─────────────────────────────────────
+model Message {
+  id           String   @id @default(cuid())
+  fromUserId   String
+  toUserId     String
+  productId    String?
+  body         String
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  from         User     @relation(fields: [fromUserId], references: [id])
+}
+
+// ─────────────────────────────────────
+// FRAUD REPORTS
+// ─────────────────────────────────────
+model FraudReport {
+  id           String        @id @default(cuid())
+  reporterId   String
+  targetType   String
+  targetId     String
+  category     FraudCategory
+  description  String
+  vendorRef    String?
+  status       ReportStatus  @default(OPEN)
+  adminNote    String?
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+
+  reporter     User          @relation(fields: [reporterId], references: [id])
+}
+
+enum FraudCategory {
+  COUNTERFEIT
+  PAYMENT_SCAM
+  MISLEADING_LISTING
+  NO_DELIVERY
+  HARASSMENT
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+// ─────────────────────────────────────
+// BULK ORDERS
+// ─────────────────────────────────────
+model BulkRequest {
+  id              String   @id @default(cuid())
+  userId          String
+  product         String
+  institutionName String
+  quantity        Int
+  discountTier    Int
+  status          String   @default("pending")
+  adminNote       String?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────
+// PAYOUTS
+// ─────────────────────────────────────
+model Payout {
+  id         String       @id @default(cuid())
+  vendorId   String
+  amount     Float
+  method     String       @default("MPESA")
+  mpesaPhone String?
+  reference  String?
+  status     PayoutStatus @default(PENDING)
+  processedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  vendor     Vendor       @relation(fields: [vendorId], references: [id])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+// ─────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────
+// PLATFORM SETTINGS
+// ─────────────────────────────────────
+model Setting {
+  key       String @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
